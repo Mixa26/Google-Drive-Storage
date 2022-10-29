@@ -19,6 +19,7 @@ import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.GoogleCredentials;
 import error.StorageErrFactory;
 import error.types.StorageErrorType;
+import org.apache.commons.io.FilenameUtils;
 
 import java.io.*;
 import java.security.GeneralSecurityException;
@@ -74,6 +75,8 @@ public class DriveStorage implements Storage{
     //MY VARIABLES
     private String folderMimeType = "application/vnd.google-apps.folder";
 
+    private Configuration currentDriveState;
+
     private Drive service;
 
     /**
@@ -108,6 +111,7 @@ public class DriveStorage implements Storage{
     @Override
     public boolean createRoot(Configuration configuration){
         try {
+            //TODO proveri da li je root napravljen ukoliko neko hoce 2 roota da napravi
             final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
 
             service = new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT)).setApplicationName(APPLICATION_NAME).build();
@@ -131,9 +135,10 @@ public class DriveStorage implements Storage{
             fileMetadata.setName("configuration.json");
             FileContent configContent = new FileContent("media/text",config);
 
-            //setting this Classes configuration
+            //setting the Drives configuration
             //so we know the limitations
             driveConfiguration = configuration;
+            currentDriveState = new Configuration(config.length(),1,new ArrayList<>());
 
             try{
                 //setting up the folder and the configuration file for uploading to the drive cloud
@@ -171,14 +176,14 @@ public class DriveStorage implements Storage{
                     result = service.files().list()
                             .setQ(nameAndMimeiType)
                             .setSpaces("drive")
-                            .setFields("nextPageToken, files(id, name, parents, mimeType)")
+                            .setFields("nextPageToken, files(id, name, parents, mimeType, size)")
                             .setPageToken(pageToken)
                             .execute();
                 } else {
                     result = service.files().list()
                             .setQ(name)
                             .setSpaces("drive")
-                            .setFields("nextPageToken, files(id, name, parents, mimeType)")
+                            .setFields("nextPageToken, files(id, name, parents, mimeType, size)")
                             .setPageToken(pageToken)
                             .execute();
                 }
@@ -270,9 +275,72 @@ public class DriveStorage implements Storage{
         return false;
     }
 
+    private boolean checkConfiguration(java.io.File file)
+    {
+        boolean valid = true;
+        if (currentDriveState.getBytes() + file.length() > driveConfiguration.getBytes())
+        {
+            System.err.println("Configuration max bytes amount exceeded!");
+            System.err.println("Error uploading the file.");
+            valid = false;
+        }
+        if(currentDriveState.getFiles() + 1 > driveConfiguration.getFiles())
+        {
+            System.err.println("Configuration max files amount exceeded!");
+            System.err.println("Error uploading the file.");
+            valid = false;
+        }
+        if(currentDriveState.getForbiddenExtensions().contains(FilenameUtils.getExtension(file.getPath()))) {
+            System.err.println("Unsupported extension!");
+            System.err.println("Error uploading the file.");
+            valid = false;
+        }
+        if (!valid)return false;
+        //updates the current drive state
+        currentDriveState.setBytes(currentDriveState.getBytes()+file.length());
+        currentDriveState.setFiles(currentDriveState.getFiles()+1);
+        return true;
+    }
+
     @Override
-    public boolean createFiles(String s, String[] strings) {
-        return false;
+    public boolean createFiles(String path, String[] names) {
+        for (int i = 0; i < names.length; i++)
+        {
+            java.io.File localFile = new java.io.File("files/" + names[i]);
+            if (!localFile.exists()) {
+                try {
+                    if (!localFile.createNewFile()) {
+                        System.err.println("Error creating the file: " + names[i]);
+                        return false;
+                    }
+                } catch (IOException e) {
+                    System.err.println("Error creating the file: " + names[i]);
+                    return false;
+                }
+            }
+            if (checkConfiguration(localFile))
+            {
+                File fileMetadata = new File();
+                fileMetadata.setName(names[i]);
+                fileMetadata.setParents(Collections.singletonList(getFileId(path,folderMimeType,service)));
+                FileContent mediaContent = new FileContent("media/text", localFile);
+                try {
+                    File file = service.files().create(fileMetadata, mediaContent)
+                            .setFields("id, parents")
+                            .execute();
+                } catch (GoogleJsonResponseException e) {
+                    System.err.println("Error encountered with Google's json respond.");
+                    System.err.println("File upload failed.");
+                    return false;
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    return false;
+                }
+            }
+            else
+                return false;
+        }
+        return true;
     }
 
     @Override
