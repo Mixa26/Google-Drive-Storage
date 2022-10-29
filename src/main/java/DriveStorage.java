@@ -212,8 +212,15 @@ public class DriveStorage implements Storage{
         for (int i = 0; i < folder.length; i++)
         {
             String name = "name='" + folder[i] + "'";
-            String nameAndMimeiType = name + " and mimeType='" + mimeiType + "'";
-            ArrayList<File> files = (ArrayList<File>) getFilesByName("",nameAndMimeiType,service);
+            ArrayList<File> files;
+            if (mimeiType != "") {
+                String nameAndMimeiType = name + " and mimeType='" + mimeiType + "'";
+                files = (ArrayList<File>) getFilesByName("", nameAndMimeiType, service);
+            }
+            else
+            {
+                files = (ArrayList<File>) getFilesByName(name,"", service);
+            }
             if (files.isEmpty())
             {
                 StorageErrFactory.createError(StorageErrorType.NOT_A_DIRECTORY);
@@ -290,7 +297,7 @@ public class DriveStorage implements Storage{
             System.err.println("Error uploading the file.");
             valid = false;
         }
-        if(currentDriveState.getForbiddenExtensions().contains(FilenameUtils.getExtension(file.getPath()))) {
+        if(driveConfiguration.getForbiddenExtensions().contains(FilenameUtils.getExtension(file.getPath()))) {
             System.err.println("Unsupported extension!");
             System.err.println("Error uploading the file.");
             valid = false;
@@ -329,7 +336,7 @@ public class DriveStorage implements Storage{
                             .setFields("id, parents")
                             .execute();
                 } catch (GoogleJsonResponseException e) {
-                    System.err.println("Error encountered with Google's json respond.");
+                    System.err.println("Error encountered with Google's Json respond.");
                     System.err.println("File upload failed.");
                     return false;
                 } catch (IOException e) {
@@ -344,8 +351,37 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean delete(String[] strings) {
-        return false;
+    public boolean delete(String[] paths) {
+        for (int i = 0; i < paths.length; i++)
+        {
+            //TODO regulisi azuriranje konfiguracije
+            String deleteFileID = getFileId(paths[i],"",service);
+            try {
+                List<File> files = new ArrayList<File>();
+
+                String pageToken = null;
+                do {
+                    FileList result = service.files().list()
+                            .setSpaces("drive")
+                            .setFields("nextPageToken, files(id, size)")
+                            .setPageToken(pageToken)
+                            .execute();
+                    for (File file : result.getFiles()) {
+                        if (file.getParents() != null && file.getParents().contains(deleteFileID))
+                        {
+                            currentDriveState.setBytes(currentDriveState.getBytes()-file.size());
+                            currentDriveState.setFiles(currentDriveState.getFiles() - 1);
+                        }
+                    }
+                    pageToken = result.getNextPageToken();
+                } while (pageToken != null);
+
+                service.files().delete(deleteFileID).execute();
+            } catch (IOException e) {
+                System.err.println("Deleting file " + paths[i] + " failed.");
+            }
+        }
+        return true;
     }
 
     @Override
