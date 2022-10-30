@@ -9,8 +9,8 @@ public class testiranje {
         DriveStorage.getInstance().createDir("folder","folder1");
         String[] names = {"sa.txt", "da"};
         DriveStorage.getInstance().createFiles("folder",names);
-        String[] paths = {"folder"};
-        DriveStorage.getInstance().delete(paths);
+        String[] paths = {"folder/sa.txt", "folder/das"};
+        DriveStorage.getInstance().relocateFiles(paths, "folder/folder1");
 
     }
 }

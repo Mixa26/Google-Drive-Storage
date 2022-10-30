@@ -103,7 +103,7 @@ public class DriveStorage implements Storage{
                 .setAccessType("offline")
                 .build();
         LocalServerReceiver receiver = new LocalServerReceiver.Builder().setPort(8888).build();
-        Credential credential = new AuthorizationCodeInstalledApp(flow, receiver).authorize("user1");
+        Credential credential = new AuthorizationCodeInstalledApp(flow, receiver).authorize("user2");
         //returns an authorized Credential object.
         return credential;
     }
@@ -350,26 +350,37 @@ public class DriveStorage implements Storage{
         return true;
     }
 
-    @Override
-    public boolean delete(String[] paths) {
-        boolean valid = true;
+    private List<File> listAllFiles()
+    {
         List<File> files = new ArrayList<File>();
 
         try {
             String pageToken = null;
-            do {
-                FileList result = service.files().list()
-                        .setSpaces("drive")
-                        .setFields("nextPageToken, files(name, parents, size, mimeType)")
-                        .setPageToken(pageToken)
-                        .execute();
-                files = result.getFiles();
-                pageToken = result.getNextPageToken();
-            } while (pageToken != null);
+
+            FileList result = service.files().list()
+                    .setSpaces("drive")
+                    .setFields("files(id, name, parents, size, mimeType)")
+                    .execute();
+            files = result.getFiles();
+
         }
         catch (IOException e)
         {
             System.err.println("Problem with searching all the files.");
+        }
+        return files;
+    }
+
+    @Override
+    public boolean delete(String[] paths) {
+        boolean valid = true;
+
+        List<File> files = new ArrayList<File>();
+
+        files = listAllFiles();
+
+        if (files.isEmpty())
+        {
             System.err.println("File deleting failed.");
             return false;
         }
@@ -400,8 +411,54 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean relocateFiles(String[] strings, String s) {
-        return false;
+    public boolean relocateFiles(String[] pathsFrom, String pathTo)
+    {
+        String pathToID = getFileId(pathTo,folderMimeType,service);
+
+        for (int i = 0; i < pathsFrom.length; i++)
+        {
+            String[] folderCuts = pathsFrom[i].split("/");
+            StringBuilder folderPath = new StringBuilder();
+            for (int j = 0; j < folderCuts.length-1; j++)
+            {
+                folderPath.append(folderCuts[j]);
+                if (j<folderCuts.length-2)
+                    folderPath.append("/");
+            }
+            String fileID = getFileId(pathsFrom[i],"",service);
+
+            if (fileID.equals(""))
+            {
+                System.err.println("File " + pathsFrom[i] + " relocation failed.");
+                return false;
+            }
+
+            try
+            {
+                File file = service.files().get(fileID)
+                        .setFields("id, name, parents")
+                        .execute();
+                StringBuilder previousParents = new StringBuilder();
+                for (String parent : file.getParents()) {
+                    previousParents.append(parent);
+                    previousParents.append(',');
+                }
+
+                // Move the file to the new folder
+                file = service.files().update(fileID, null)
+                        .setAddParents(pathToID)
+                        .setRemoveParents(previousParents.toString())
+                        .setFields("id, parents")
+                        .execute();
+
+            } catch (IOException e) {
+                System.err.println("Error encountered in communication with the remote.");
+                return false;
+            }
+
+        }
+
+        return true;
     }
 
     @Override
