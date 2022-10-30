@@ -75,7 +75,7 @@ public class DriveStorage implements Storage{
     //MY VARIABLES
     private String folderMimeType = "application/vnd.google-apps.folder";
 
-    private Configuration currentDriveState;
+    public Configuration currentDriveState;
 
     private Drive service;
 
@@ -352,36 +352,51 @@ public class DriveStorage implements Storage{
 
     @Override
     public boolean delete(String[] paths) {
+        boolean valid = true;
+        List<File> files = new ArrayList<File>();
+
+        try {
+            String pageToken = null;
+            do {
+                FileList result = service.files().list()
+                        .setSpaces("drive")
+                        .setFields("nextPageToken, files(name, parents, size, mimeType)")
+                        .setPageToken(pageToken)
+                        .execute();
+                files = result.getFiles();
+                pageToken = result.getNextPageToken();
+            } while (pageToken != null);
+        }
+        catch (IOException e)
+        {
+            System.err.println("Problem with searching all the files.");
+            System.err.println("File deleting failed.");
+            return false;
+        }
+
         for (int i = 0; i < paths.length; i++)
         {
-            //TODO regulisi azuriranje konfiguracije
             String deleteFileID = getFileId(paths[i],"",service);
-            try {
-                List<File> files = new ArrayList<File>();
 
-                String pageToken = null;
-                do {
-                    FileList result = service.files().list()
-                            .setSpaces("drive")
-                            .setFields("nextPageToken, files(id, size)")
-                            .setPageToken(pageToken)
-                            .execute();
-                    for (File file : result.getFiles()) {
-                        if (file.getParents() != null && file.getParents().contains(deleteFileID))
-                        {
-                            currentDriveState.setBytes(currentDriveState.getBytes()-file.size());
-                            currentDriveState.setFiles(currentDriveState.getFiles() - 1);
-                        }
+            try {
+                for(int j = 0; j < files.size(); j++)
+                {
+                    File curr = files.get(j);
+                    if (curr.getParents() == null)continue;
+                    if (curr.getParents().contains(deleteFileID) && !curr.getMimeType().equals(folderMimeType))
+                    {
+                        currentDriveState.setBytes(currentDriveState.getBytes()-curr.getSize());
+                        currentDriveState.setFiles(currentDriveState.getFiles()-1);
                     }
-                    pageToken = result.getNextPageToken();
-                } while (pageToken != null);
+                }
 
                 service.files().delete(deleteFileID).execute();
             } catch (IOException e) {
                 System.err.println("Deleting file " + paths[i] + " failed.");
+                valid = false;
             }
         }
-        return true;
+        return valid;
     }
 
     @Override

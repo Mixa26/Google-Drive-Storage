@@ -11,5 +11,6 @@ public class testiranje {
         DriveStorage.getInstance().createFiles("folder",names);
         String[] paths = {"folder"};
         DriveStorage.getInstance().delete(paths);
+
     }
 }
