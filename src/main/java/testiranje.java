@@ -11,8 +11,7 @@ public class testiranje {
         String[] names = {"sa.txt", "da"};
         String[] names1 = {"sab.txt"} ;
         DriveStorage.getInstance().createFiles("folder",names);
-        DriveStorage.getInstance().createFiles("folder/folder2",names1);
-        String[] wrong = {"configuration.json"};
-        System.out.println( DriveStorage.getInstance().dirContainsFiles("", wrong));
+        DriveStorage.getInstance().createFiles("folder/folder1",names1);
+        System.out.println(DriveStorage.getInstance().folderContainingFile("sab.txt"));
     }
 }

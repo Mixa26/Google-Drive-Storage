@@ -352,14 +352,30 @@ public class DriveStorage implements Storage{
         List<File> files = new ArrayList<File>();
 
         try {
-            String pageToken = null;
-
             FileList result = service.files().list()
                     .setSpaces("drive")
                     .setFields("files(id, name, parents, size, mimeType, createdTime, modifiedTime, fileExtension)")
                     .execute();
             files = result.getFiles();
+        }
+        catch (IOException e)
+        {
+            System.err.println("Problem with searching all the files.");
+        }
+        return files;
+    }
 
+    private List<File> listAllDirs()
+    {
+        List<File> files = new ArrayList<File>();
+
+        try {
+            FileList result = service.files().list()
+                    .setQ("mimeType='application/vnd.google-apps.folder'")
+                    .setSpaces("drive")
+                    .setFields("files(id, name, parents, size, mimeType, createdTime, modifiedTime, fileExtension)")
+                    .execute();
+            files = result.getFiles();
         }
         catch (IOException e)
         {
@@ -664,8 +680,38 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public java.io.File folderContainingFile(String s) {
-        return null;
+    public String folderContainingFile(String name) {
+        List<File> allFolders = listAllDirs();
+        List<File> allFiles = listAllFiles();
+
+        File fileSearchedFor = null;
+
+        for (File file : allFiles)
+        {
+            if (file.getName().equals(name))
+            {
+                fileSearchedFor = file;
+                break;
+            }
+        }
+
+        if (fileSearchedFor == null)
+        {
+            System.out.println("No folder found containing the provided file name.");
+            System.err.println("Folder search failed.");
+            return "";
+        }
+
+        for (File folder : allFolders)
+        {
+            if (fileSearchedFor.getParents() != null && fileSearchedFor.getParents().contains(folder.getId()))
+            {
+                return folder.getName();
+            }
+        }
+
+        System.out.println("No folder found containing the provided file name.");
+        return "";
     }
 
     @Override
