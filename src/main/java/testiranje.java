@@ -12,6 +12,6 @@ public class testiranje {
         String[] names1 = {"sab.txt"} ;
         DriveStorage.getInstance().createFiles("folder",names);
         DriveStorage.getInstance().createFiles("folder/folder2",names1);
-        DriveStorage.getInstance().searchAllDirsInDir("");
+        DriveStorage.getInstance().searchAllFilesInDirs("");
     }
 }

@@ -24,11 +24,7 @@ import org.apache.commons.io.FilenameUtils;
 
 import java.io.*;
 import java.security.GeneralSecurityException;
-import java.util.Arrays;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 public class DriveStorage implements Storage{
     //configuring DriveStorage to be singleton
@@ -360,7 +356,7 @@ public class DriveStorage implements Storage{
 
             FileList result = service.files().list()
                     .setSpaces("drive")
-                    .setFields("files(id, name, parents, size, mimeType, createdTime, modifiedTime)")
+                    .setFields("files(id, name, parents, size, mimeType, createdTime, modifiedTime, fileExtension)")
                     .execute();
             files = result.getFiles();
 
@@ -514,42 +510,45 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public Metadata searchAllFilesInDir(String dirPath) {
+    public ArrayList<Object> searchAllFilesInDir(String dirPath) {
         String folderID = getFileId(dirPath,folderMimeType,service);
 
         if (folderID.equals(""))
         {
             System.err.println("File search failed.");
-            return null;
+            return new ArrayList<>();
         }
 
         List<File> files = new ArrayList<File>();
         files = listAllFiles();
+        ArrayList<Object> res = new ArrayList<>();
 
         for (File file : files)
         {
             if (file.getParents() != null && file.getParents().contains(folderID))
             {
+                res.add(file);
                 System.out.printf("File: %s size: %s ctime: %s mtime: %s\n", file.getName(), file.getSize(), file.getCreatedTime(), file.getModifiedTime());
             }
         }
 
-        return null;
+        return res;
     }
 
     @Override
-    public ArrayList<java.io.File> searchAllDirsInDir(String dirPath) {
+    public ArrayList<Object> searchAllDirsInDir(String dirPath) {
         String folderID = getFileId(dirPath,folderMimeType,service);
 
         if (folderID.equals(""))
         {
             System.err.println("File search failed.");
-            return null;
+            return new ArrayList<>();
         }
 
         List<File> files = new ArrayList<File>();
         files = listAllFiles();
         List<String> toSearch = new ArrayList<String>();
+        ArrayList<Object> res = new ArrayList<>();
 
         for (File file : files)
         {
@@ -566,28 +565,79 @@ public class DriveStorage implements Storage{
                 {
                     if (!file.getMimeType().equals(folderMimeType) && file.getParents().contains(toSearch.get(i)))
                     {
+                        res.add(file);
                         System.out.printf("File: %s size: %s ctime: %s mtime: %s\n", file.getName(), file.getSize(), file.getCreatedTime(), file.getModifiedTime());
                         break;
                     }
                 }
             }
         }
+        return res;
+    }
 
+    private List<Object> recursiveSubDirs(String ID, List<Object> files, List<File> allFiles)
+    {
+        for (int i = 0; i < allFiles.size(); i++)
+        {
+            File curr = allFiles.get(i);
+            if (curr.getParents() != null && curr.getParents().contains(ID))
+            {
+                if (curr.getMimeType().equals(folderMimeType))
+                {
+                    files = recursiveSubDirs(curr.getId(), files, allFiles);
+                }
+                else
+                    files.add(curr);
+            }
+        }
+        return files;
+    }
+
+    @Override
+    public ArrayList<Object> searchAllFilesInDirs(String path) {
+        String folderID = getFileId(path,folderMimeType,service);
+        List<File> allFiles = listAllFiles();
+        List<Object> files = new ArrayList<>();
+
+        if (folderID.equals(""))
+        {
+            System.err.println("Search failed.");
+            return new ArrayList<>();
+        }
+
+        files = recursiveSubDirs(folderID, files, allFiles);
+
+        return (ArrayList<Object>) files;
+    }
+
+    @Override
+    public ArrayList<Object> searchFilesByExt(String path, String ext) {
+        String folderID = getFileId(path,folderMimeType,service);
+
+        if (folderID.equals(""))
+        {
+            System.err.println("Search failed.");
+            return null;
+        }
+
+        List<File> files = listAllFiles();
+
+        for (int i = 0; i < files.size(); i++)
+        {
+            File curr = files.get(i);
+            if (curr.getParents() != null && curr.getParents().contains(folderID))
+            {
+                if (curr.getFileExtension().equals(ext))
+                {
+                    System.out.println("File: " + curr.getName());
+                }
+            }
+        }
         return null;
     }
 
     @Override
-    public ArrayList<java.io.File> searchAllFilesInDirs(String s) {
-        return null;
-    }
-
-    @Override
-    public ArrayList<java.io.File> searchFilesByExt(String s, String s1) {
-        return null;
-    }
-
-    @Override
-    public ArrayList<java.io.File> searchFileBySub(String s) {
+    public ArrayList<Object> searchFileBySub(String s) {
         return null;
     }
 
@@ -607,12 +657,17 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public ArrayList<java.io.File> filesCreatedModifiedOnDate(String s) {
+    public ArrayList<Object> filesCreatedModifiedOnDate(Date date, Date date1) {
         return null;
     }
 
     @Override
     public void filterSearchResult(boolean b, boolean b1, boolean b2, boolean b3) {
+
+    }
+
+    @Override
+    public void printRes(ArrayList<Object> arrayList) {
 
     }
 }
