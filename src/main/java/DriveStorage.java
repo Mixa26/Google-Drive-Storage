@@ -612,26 +612,16 @@ public class DriveStorage implements Storage{
 
     @Override
     public ArrayList<Object> searchFilesByExt(String path, String ext) {
-        String folderID = getFileId(path,folderMimeType,service);
         ArrayList<Object> res = new ArrayList<>();
 
-        if (folderID.equals(""))
-        {
-            System.err.println("Search failed.");
-            return new ArrayList<>();
-        }
-
-        List<File> files = listAllFiles();
+        List<Object> files = searchAllFilesInDirs(path);
 
         for (int i = 0; i < files.size(); i++)
         {
-            File curr = files.get(i);
-            if (curr.getParents() != null && curr.getParents().contains(folderID))
+            File curr = (File) files.get(i);
+            if (curr.getFileExtension() != null && curr.getFileExtension().equals(ext))
             {
-                if (curr.getFileExtension() != null && curr.getFileExtension().equals(ext))
-                {
-                    res.add(curr);
-                }
+                res.add(curr);
             }
         }
         return res;
