@@ -613,11 +613,12 @@ public class DriveStorage implements Storage{
     @Override
     public ArrayList<Object> searchFilesByExt(String path, String ext) {
         String folderID = getFileId(path,folderMimeType,service);
+        ArrayList<Object> res = new ArrayList<>();
 
         if (folderID.equals(""))
         {
             System.err.println("Search failed.");
-            return null;
+            return new ArrayList<>();
         }
 
         List<File> files = listAllFiles();
@@ -627,13 +628,13 @@ public class DriveStorage implements Storage{
             File curr = files.get(i);
             if (curr.getParents() != null && curr.getParents().contains(folderID))
             {
-                if (curr.getFileExtension().equals(ext))
+                if (curr.getFileExtension() != null && curr.getFileExtension().equals(ext))
                 {
-                    System.out.println("File: " + curr.getName());
+                    res.add(curr);
                 }
             }
         }
-        return null;
+        return res;
     }
 
     @Override
