@@ -7,10 +7,11 @@ public class testiranje {
         DriveStorage.getInstance().createRoot(new Configuration(100,5,forb));
         DriveStorage.getInstance().createDir("","folder");
         DriveStorage.getInstance().createDir("folder","folder1");
+        DriveStorage.getInstance().createDir("folder","folder2");
         String[] names = {"sa.txt", "da"};
+        String[] names1 = {"sab.txt"} ;
         DriveStorage.getInstance().createFiles("folder",names);
-        String[] paths = {"folder/sa.txt", "folder/das"};
-        DriveStorage.getInstance().relocateFiles(paths, "folder/folder1");
-
+        DriveStorage.getInstance().createFiles("folder/folder2",names1);
+        DriveStorage.getInstance().searchAllDirsInDir("");
     }
 }

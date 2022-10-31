@@ -19,6 +19,7 @@ import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.GoogleCredentials;
 import error.StorageErrFactory;
 import error.types.StorageErrorType;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 
 import java.io.*;
@@ -359,7 +360,7 @@ public class DriveStorage implements Storage{
 
             FileList result = service.files().list()
                     .setSpaces("drive")
-                    .setFields("files(id, name, parents, size, mimeType)")
+                    .setFields("files(id, name, parents, size, mimeType, createdTime, modifiedTime)")
                     .execute();
             files = result.getFiles();
 
@@ -450,34 +451,128 @@ public class DriveStorage implements Storage{
                         .setRemoveParents(previousParents.toString())
                         .setFields("id, parents")
                         .execute();
-
             } catch (IOException e) {
                 System.err.println("Error encountered in communication with the remote.");
                 return false;
             }
-
         }
-
         return true;
     }
 
     @Override
-    public boolean download(String s, String s1) {
-        return false;
+    public boolean download(String pathFrom, String pathTo) {
+        try {
+            //TODO skidanje direktorijuma
+            String fileID = getFileId(pathFrom,"",service);
+
+            if (fileID.equals(""))
+            {
+                System.err.println("File download failed.");
+                return false;
+            }
+
+            OutputStream outputStream = new ByteArrayOutputStream();
+
+            service.files().get(fileID)
+                    .executeMediaAndDownloadTo(outputStream);
+
+            java.io.File file = new java.io.File(pathTo);
+            InputStream input = new ByteArrayInputStream(((ByteArrayOutputStream)outputStream).toByteArray());
+
+            FileUtils.copyInputStreamToFile(input, file);
+        } catch (IOException e) {
+            System.err.println("Error downloading the file. Either bad path or bad Json respond.");
+            return false;
+        }
+        return true;
     }
 
     @Override
-    public boolean rename(String s, String s1) {
-        return false;
+    public boolean rename(String path, String name) {
+
+        String fileID = getFileId(path,"",service);
+
+        if (fileID.equals(""))
+        {
+            System.err.println("Renaming the file failed.");
+            return false;
+        }
+
+        try {
+            File file = service.files().get(fileID)
+                    .setFields("name")
+                    .execute();
+
+            file.setName(name);
+
+            service.files().update(fileID,file).setFields("name").execute();
+        } catch (IOException e) {
+            System.err.println("Something went wrong with renaming the file.");
+            return false;
+        }
+        return true;
     }
 
     @Override
-    public Metadata searchAllFilesInDir(String s) {
+    public Metadata searchAllFilesInDir(String dirPath) {
+        String folderID = getFileId(dirPath,folderMimeType,service);
+
+        if (folderID.equals(""))
+        {
+            System.err.println("File search failed.");
+            return null;
+        }
+
+        List<File> files = new ArrayList<File>();
+        files = listAllFiles();
+
+        for (File file : files)
+        {
+            if (file.getParents() != null && file.getParents().contains(folderID))
+            {
+                System.out.printf("File: %s size: %s ctime: %s mtime: %s\n", file.getName(), file.getSize(), file.getCreatedTime(), file.getModifiedTime());
+            }
+        }
+
         return null;
     }
 
     @Override
-    public ArrayList<java.io.File> searchAllDirsInDir(String s) {
+    public ArrayList<java.io.File> searchAllDirsInDir(String dirPath) {
+        String folderID = getFileId(dirPath,folderMimeType,service);
+
+        if (folderID.equals(""))
+        {
+            System.err.println("File search failed.");
+            return null;
+        }
+
+        List<File> files = new ArrayList<File>();
+        files = listAllFiles();
+        List<String> toSearch = new ArrayList<String>();
+
+        for (File file : files)
+        {
+            if (file.getParents() != null && file.getParents().contains(folderID) && file.getMimeType().equals(folderMimeType))
+            {
+                toSearch.add(file.getId());
+            }
+        }
+        for (File file : files)
+        {
+            if (file.getParents() != null)
+            {
+                for (int i = 0; i < toSearch.size(); i++)
+                {
+                    if (!file.getMimeType().equals(folderMimeType) && file.getParents().contains(toSearch.get(i)))
+                    {
+                        System.out.printf("File: %s size: %s ctime: %s mtime: %s\n", file.getName(), file.getSize(), file.getCreatedTime(), file.getModifiedTime());
+                        break;
+                    }
+                }
+            }
+        }
+
         return null;
     }
 
