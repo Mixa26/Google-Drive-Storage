@@ -628,8 +628,21 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public ArrayList<Object> searchFileBySub(String s) {
-        return null;
+    public ArrayList<Object> searchFileBySub(String sub) {
+        ArrayList<Object> res = new ArrayList<>();
+
+        List<Object> files = searchAllFilesInDirs("");
+
+        for (int i = 0; i < files.size(); i++)
+        {
+            File curr = (File) files.get(i);
+            if (curr.getName().contains(sub))
+            {
+                res.add(curr);
+                System.out.println(curr.getName());
+            }
+        }
+        return res;
     }
 
     @Override
