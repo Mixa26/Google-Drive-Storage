@@ -528,7 +528,6 @@ public class DriveStorage implements Storage{
             if (file.getParents() != null && file.getParents().contains(folderID))
             {
                 res.add(file);
-                System.out.printf("File: %s size: %s ctime: %s mtime: %s\n", file.getName(), file.getSize(), file.getCreatedTime(), file.getModifiedTime());
             }
         }
 
@@ -566,7 +565,6 @@ public class DriveStorage implements Storage{
                     if (!file.getMimeType().equals(folderMimeType) && file.getParents().contains(toSearch.get(i)))
                     {
                         res.add(file);
-                        System.out.printf("File: %s size: %s ctime: %s mtime: %s\n", file.getName(), file.getSize(), file.getCreatedTime(), file.getModifiedTime());
                         break;
                     }
                 }
@@ -645,8 +643,24 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean dirContainsFiles(String s, String[] strings) {
-        return false;
+    public boolean dirContainsFiles(String path, String[] names) {
+        List<Object> files = searchAllFilesInDirs(path);
+        List<String> fileNames = new ArrayList<>();
+
+        for (Object file : files)
+        {
+            fileNames.add(((File)file).getName());
+        }
+
+        for (String name : names)
+        {
+            if (!fileNames.contains(name))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     @Override
