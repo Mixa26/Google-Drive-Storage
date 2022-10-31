@@ -639,7 +639,6 @@ public class DriveStorage implements Storage{
             if (curr.getName().contains(sub))
             {
                 res.add(curr);
-                System.out.println(curr.getName());
             }
         }
         return res;
