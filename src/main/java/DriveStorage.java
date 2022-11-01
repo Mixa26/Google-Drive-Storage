@@ -6,7 +6,6 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.http.FileContent;
-import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
@@ -15,8 +14,6 @@ import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
-import com.google.auth.http.HttpCredentialsAdapter;
-import com.google.auth.oauth2.GoogleCredentials;
 import error.StorageErrFactory;
 import error.types.StorageErrorType;
 import org.apache.commons.io.FileUtils;
@@ -70,11 +67,13 @@ public class DriveStorage implements Storage{
     private static final String CREDENTIALS_FILE_PATH = "/credentials.json";
 
     //MY VARIABLES
-    private String folderMimeType = "application/vnd.google-apps.folder";
+    private final String folderMimeType = "application/vnd.google-apps.folder";
 
     public Configuration currentDriveState;
 
     private Drive service;
+
+    private List<Object> lastSearchRes = new ArrayList<>();
 
     /**
      * Creates an authorized Credential object.
@@ -86,7 +85,7 @@ public class DriveStorage implements Storage{
     private static Credential getCredentials(final NetHttpTransport HTTP_TRANSPORT)
             throws IOException {
         // Load client secrets.
-        InputStream in = DriveQuickStart.class.getResourceAsStream(CREDENTIALS_FILE_PATH);
+        InputStream in = DriveStorage.class.getResourceAsStream(CREDENTIALS_FILE_PATH);
         if (in == null) {
             throw new FileNotFoundException("Resource not found: " + CREDENTIALS_FILE_PATH);
         }
@@ -546,7 +545,7 @@ public class DriveStorage implements Storage{
                 res.add(file);
             }
         }
-
+        lastSearchRes = res;
         return res;
     }
 
@@ -586,6 +585,7 @@ public class DriveStorage implements Storage{
                 }
             }
         }
+        lastSearchRes = res;
         return res;
     }
 
@@ -621,6 +621,7 @@ public class DriveStorage implements Storage{
 
         files = recursiveSubDirs(folderID, files, allFiles);
 
+        lastSearchRes = files;
         return (ArrayList<Object>) files;
     }
 
@@ -638,6 +639,7 @@ public class DriveStorage implements Storage{
                 res.add(curr);
             }
         }
+        lastSearchRes = res;
         return res;
     }
 
@@ -655,6 +657,7 @@ public class DriveStorage implements Storage{
                 res.add(curr);
             }
         }
+        lastSearchRes = res;
         return res;
     }
 
@@ -715,22 +718,159 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public void sort(SortParamsEnum sortParamsEnum, boolean b) {
+    public void sort(SortParamsEnum sortParamsEnum, boolean ascending) {
+        List<Object> files = new ArrayList<>();
 
+        for (Object file : lastSearchRes)
+        {
+            files.add((File)file);
+        }
+
+        if (sortParamsEnum.equals(SortParamsEnum.NAME))
+        {
+            if (ascending)
+                files.sort(new NameComparatorAscending());
+            else
+                files.sort(new NameComparatorDescending());
+
+            lastSearchRes = files;
+        }
+        else if (sortParamsEnum.equals(SortParamsEnum.DATE_OF_CREATION))
+        {
+            if (ascending)
+                files.sort(new DateCreationComparatorAscending());
+            else
+                files.sort(new DateCreationComparatorDescending());
+
+            lastSearchRes = files;
+        }
+        else if (sortParamsEnum.equals(SortParamsEnum.DATE_OF_MODIFICATION))
+        {
+            if (ascending)
+                files.sort(new DateModificationComparatorAscending());
+            else
+                files.sort(new DateModificationComparatorDescending());
+
+            lastSearchRes = files;
+        }
     }
 
     @Override
     public ArrayList<Object> filesCreatedModifiedOnDate(Date date, Date date1) {
-        return null;
+
+        List<Object> files = searchAllFilesInDirs("");
+        ArrayList<Object> res = new ArrayList<>();
+
+        for (Object file : files)
+        {
+            System.out.println(((File)file).getCreatedTime().getValue());
+            Date cFileDate = new Date(((File)file).getCreatedTime().getValue());
+            Date mFileDate = new Date(((File)file).getModifiedTime().getValue());
+
+            if ((date.compareTo(cFileDate) < 0 && cFileDate.compareTo(date1) < 0) || (date.compareTo(mFileDate) < 0 && mFileDate.compareTo(date1) < 0))
+                res.add(file);
+        }
+        lastSearchRes = res;
+        return res;
+    }
+
+    private StringBuilder constructFullPath(File file, StringBuilder res, List<File> allDirs)
+    {
+        for (File dir : allDirs)
+        {
+            if (dir.getId().equals(rootId))break;
+            if (file.getParents() != null && file.getParents().contains(dir.getId()))
+            {
+                res.insert(0,dir.getName() + "/");
+                res = constructFullPath(dir, res, allDirs);
+            }
+        }
+        return res;
     }
 
     @Override
-    public void filterSearchResult(boolean b, boolean b1, boolean b2, boolean b3) {
+    public void filterSearchResult(boolean fullPath, boolean showSize, boolean showDateOfCreation, boolean showDateOfModification) {
+        ArrayList<String> filesFiltered = new ArrayList<>();
+        List<File> allDirs = listAllDirs();
 
+        int minSpaces = 0;
+        if (fullPath)
+        {
+            for (Object file : lastSearchRes)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.append(((File)file).getName());
+                sb = constructFullPath(((File)file),sb,allDirs);
+                String FULL_PATH = sb.toString();
+                if (FULL_PATH.length() > minSpaces)
+                    minSpaces = FULL_PATH.length();
+                filesFiltered.add(FULL_PATH);
+            }
+        }
+        else
+        {
+            for (Object file : lastSearchRes)
+            {
+                filesFiltered.add(((File)file).getName());
+            }
+        }
+
+        for (int i = 0; i < filesFiltered.size(); i++)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.append(filesFiltered.get(i));
+            for (int j = 0; j < minSpaces - filesFiltered.get(i).length(); j++)
+            {
+                sb.append(" ");
+            }
+            filesFiltered.set(i, sb.toString());
+        }
+
+        if (showSize)
+        {
+            for (int i = 0; i < lastSearchRes.size(); i++)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.append(filesFiltered.get(i));
+                sb.append(" ");
+                sb.append(((File) lastSearchRes.get(i)).getSize()/1024);
+                sb.append("KB");
+                filesFiltered.set(i, sb.toString());
+            }
+        }
+        if (showDateOfCreation)
+        {
+            for (int i = 0; i < lastSearchRes.size(); i++)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.append(filesFiltered.get(i));
+                sb.append(" date created: ");
+                sb.append(new Date(((File) lastSearchRes.get(i)).getCreatedTime().getValue()).toString());
+                filesFiltered.set(i, sb.toString());
+            }
+        }
+        if (showDateOfModification)
+        {
+            for (int i = 0; i < lastSearchRes.size(); i++)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.append(filesFiltered.get(i));
+                sb.append(" date modified: ");
+                sb.append(new Date(((File) lastSearchRes.get(i)).getModifiedTime().getValue()).toString());
+                filesFiltered.set(i, sb.toString());
+            }
+        }
+        for (String file : filesFiltered)
+        {
+            System.out.println(file);
+        }
     }
 
     @Override
     public void printRes(ArrayList<Object> arrayList) {
-
+        for (Object file : arrayList)
+        {
+            System.out.println(((File)file).getName());
+        }
     }
 }
