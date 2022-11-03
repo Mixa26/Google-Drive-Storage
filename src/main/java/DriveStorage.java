@@ -106,6 +106,59 @@ public class DriveStorage implements Storage{
         return credential;
     }
 
+    private List<File> getRootCreationFiles(String name)
+    {
+        FileList result;
+        String nameProvide = "name='" + name + "'" + " and mimeType='application/vnd.google-apps.folder'";
+        try {
+            result = service.files().list()
+                    .setQ(nameProvide)
+                    .setSpaces("drive")
+                    .setFields("files(id, name, parents, mimeType, size)")
+                    .execute();
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+        return result.getFiles();
+    }
+
+    private String getRootCreationFolderID(String path)
+    {
+        String[] splits = path.split("/");
+        String parentID = "";
+
+        for (int i = 0; i < splits.length; i++)
+        {
+            List<File> folders = getRootCreationFiles(splits[i]);
+            if (folders.isEmpty())
+            {
+                throw new BadPathException("Bad path!");
+            }
+            else
+            {
+                if (i != 0)
+                {
+                    for (int j = 0; j < folders.size(); j++)
+                    {
+                        if (folders.get(j).getParents().contains(parentID))
+                        {
+                            parentID = folders.get(j).getId();
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    parentID = folders.get(0).getId();
+                }
+            }
+        }
+        return parentID;
+    }
+
     @Override
     public boolean createRoot(String path, Configuration configuration) throws BadPathException{
         try {
@@ -114,12 +167,20 @@ public class DriveStorage implements Storage{
 
             service = new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT)).setApplicationName(APPLICATION_NAME).build();
 
+            String fileID = "";
+
+            if (!path.equals(""))
+                fileID = getRootCreationFolderID(path);
+
             //creating a empty folder called Drive root
             File folderMetadata = new File();
             folderMetadata.setName("Drive root");
+            if (!fileID.equals(""))
+            {
+                folderMetadata.setParents(Collections.singletonList(fileID));
+            }
             folderMetadata.setMimeType("application/vnd.google-apps.folder");
             //setting this to be the root folder of the storage
-            folderMetadata.setDriveId("root");
 
             java.io.File config = new java.io.File("files/configuration.json");
 
