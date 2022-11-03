@@ -14,8 +14,6 @@ import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
-import error.StorageErrFactory;
-import error.types.StorageErrorType;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 
@@ -69,7 +67,8 @@ public class DriveStorage implements Storage{
     //MY VARIABLES
     private final String folderMimeType = "application/vnd.google-apps.folder";
 
-    public Configuration currentDriveState;
+
+    private ArrayList<Configuration> fileConfigs = new ArrayList<>();
 
     private Drive service;
 
@@ -123,18 +122,14 @@ public class DriveStorage implements Storage{
 
             //writing the contents of configuration into a jason file
             FileWriter writer = new FileWriter("files/configuration.json");
-            writer.write(configuration.toJson());
+            fileConfigs.add(configuration);
+            writer.write(configuration.toJson(fileConfigs));
             writer.close();
 
             //creating metadata for configuration for the drive on the cloud
             File fileMetadata = new File();
             fileMetadata.setName("configuration.json");
             FileContent configContent = new FileContent("media/text",config);
-
-            //setting the Drives configuration
-            //so we know the limitations
-            driveConfiguration = configuration;
-            currentDriveState = new Configuration(config.length(),1,new ArrayList<>());
 
             try{
                 //setting up the folder and the configuration file for uploading to the drive cloud
@@ -219,7 +214,6 @@ public class DriveStorage implements Storage{
             }
             if (files.isEmpty())
             {
-                StorageErrFactory.createError(StorageErrorType.NOT_A_DIRECTORY);
                 System.err.println(path + " <-- bad path");
                 return "";
             }
@@ -234,7 +228,6 @@ public class DriveStorage implements Storage{
             }
             if(badBath)
             {
-                StorageErrFactory.createError(StorageErrorType.NOT_A_DIRECTORY);
                 System.err.println(path + " <-- bad path");
                 return "";
             }
@@ -252,7 +245,6 @@ public class DriveStorage implements Storage{
     public boolean createDir(String path, String name) {
         if (rootId.equals(""))
         {
-            StorageErrFactory.createError(StorageErrorType.NO_ROOT);
             return false;
         }
         try {
@@ -280,6 +272,7 @@ public class DriveStorage implements Storage{
 
     private boolean checkConfiguration(java.io.File file)
     {
+        /*
         boolean valid = true;
         if (currentDriveState.getBytes() + file.length() > driveConfiguration.getBytes())
         {
@@ -302,6 +295,8 @@ public class DriveStorage implements Storage{
         //updates the current drive state
         currentDriveState.setBytes(currentDriveState.getBytes()+file.length());
         currentDriveState.setFiles(currentDriveState.getFiles()+1);
+
+         */
         return true;
     }
 
@@ -408,8 +403,8 @@ public class DriveStorage implements Storage{
                     if (curr.getParents() == null)continue;
                     if (curr.getParents().contains(deleteFileID) && !curr.getMimeType().equals(folderMimeType))
                     {
-                        currentDriveState.setBytes(currentDriveState.getBytes()-curr.getSize());
-                        currentDriveState.setFiles(currentDriveState.getFiles()-1);
+                        //currentDriveState.setBytes(currentDriveState.getBytes()-curr.getSize());
+                        //currentDriveState.setFiles(currentDriveState.getFiles()-1);
                     }
                 }
 
