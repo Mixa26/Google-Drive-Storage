@@ -14,6 +14,9 @@ import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
+import customExceptions.BadPathException;
+import customExceptions.FileCreationException;
+import customExceptions.NoRootException;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 
@@ -104,7 +107,7 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean createRoot(Configuration configuration){
+    public boolean createRoot(String path, Configuration configuration) throws BadPathException{
         try {
             //TODO proveri da li je root napravljen ukoliko neko hoce 2 roota da napravi
             final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
@@ -144,14 +147,21 @@ public class DriveStorage implements Storage{
             }
             catch (GoogleJsonResponseException e)
             {
-                System.err.println("Something went wrong with Google Json respond.");
+                e.printStackTrace();
             }
         }
         catch (IOException | GeneralSecurityException e)
         {
-            System.err.println("Something went wrong with preprocessing steps of converting the configuration file and creation of the Drive folder.");
+            e.printStackTrace();
         }
         return false;
+    }
+
+    private void rootCheck() throws NoRootException
+    {
+        if (rootId.equals("")) {
+            throw new NoRootException("No root created!");
+        }
     }
 
     private List<File> getFilesByName(String name, String nameAndMimeiType, Drive service)
@@ -186,12 +196,12 @@ public class DriveStorage implements Storage{
         }
         catch (IOException e)
         {
-            System.err.println("Error with getting files by name.");
+            e.printStackTrace();
         }
         return files;
     }
 
-    private String getFileId(String path,String mimeiType, Drive service)
+    private String getFileId(String path,String mimeiType, Drive service) throws BadPathException
     {
         if (path.equals(""))return rootId;
         String[] folder = path.split("/");
@@ -214,8 +224,7 @@ public class DriveStorage implements Storage{
             }
             if (files.isEmpty())
             {
-                System.err.println(path + " <-- bad path");
-                return "";
+                throw new BadPathException("Bad path!");
             }
             for (int j = 0; j < files.size(); j++)
             {
@@ -228,8 +237,7 @@ public class DriveStorage implements Storage{
             }
             if(badBath)
             {
-                System.err.println(path + " <-- bad path");
-                return "";
+                throw new BadPathException("Bad path!");
             }
             else
             {
@@ -242,11 +250,8 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean createDir(String path, String name) {
-        if (rootId.equals(""))
-        {
-            return false;
-        }
+    public boolean createDir(String path, String name) throws NoRootException{
+        rootCheck();
         try {
             String fileId = getFileId(path,folderMimeType,service);
 
@@ -260,12 +265,12 @@ public class DriveStorage implements Storage{
                         .execute();
                 return true;
             } catch (GoogleJsonResponseException e) {
-                System.err.println("Error making a folder. Bad Json respond.");
+                e.printStackTrace();
             }
         }
         catch (IOException e)
         {
-            System.err.println("Something went wrong with creating a directory.");
+            e.printStackTrace();
         }
         return false;
     }
@@ -301,18 +306,18 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean createFiles(String path, String[] names) {
+    public boolean createFiles(String path, String[] names) throws FileCreationException{
+        rootCheck();
         for (int i = 0; i < names.length; i++)
         {
             java.io.File localFile = new java.io.File("files/" + names[i]);
             if (!localFile.exists()) {
                 try {
                     if (!localFile.createNewFile()) {
-                        System.err.println("Error creating the file: " + names[i]);
-                        return false;
+                        throw new FileCreationException("File not created.");
                     }
                 } catch (IOException e) {
-                    System.err.println("Error creating the file: " + names[i]);
+                    e.printStackTrace();
                     return false;
                 }
             }
@@ -326,12 +331,8 @@ public class DriveStorage implements Storage{
                     File file = service.files().create(fileMetadata, mediaContent)
                             .setFields("id, parents")
                             .execute();
-                } catch (GoogleJsonResponseException e) {
-                    System.err.println("Error encountered with Google's Json respond.");
-                    System.err.println("File upload failed.");
-                    return false;
                 } catch (IOException e) {
-                    e.printStackTrace();
+                        e.printStackTrace();
                     return false;
                 }
             }
@@ -354,7 +355,7 @@ public class DriveStorage implements Storage{
         }
         catch (IOException e)
         {
-            System.err.println("Problem with searching all the files.");
+            e.printStackTrace();
         }
         return files;
     }
@@ -373,13 +374,14 @@ public class DriveStorage implements Storage{
         }
         catch (IOException e)
         {
-            System.err.println("Problem with searching all the files.");
+            e.printStackTrace();
         }
         return files;
     }
 
     @Override
     public boolean delete(String[] paths) {
+        rootCheck();
         boolean valid = true;
 
         List<File> files = new ArrayList<File>();
@@ -388,7 +390,6 @@ public class DriveStorage implements Storage{
 
         if (files.isEmpty())
         {
-            System.err.println("File deleting failed.");
             return false;
         }
 
@@ -410,7 +411,7 @@ public class DriveStorage implements Storage{
 
                 service.files().delete(deleteFileID).execute();
             } catch (IOException e) {
-                System.err.println("Deleting file " + paths[i] + " failed.");
+                e.printStackTrace();
                 valid = false;
             }
         }
@@ -420,6 +421,7 @@ public class DriveStorage implements Storage{
     @Override
     public boolean relocateFiles(String[] pathsFrom, String pathTo)
     {
+        rootCheck();
         String pathToID = getFileId(pathTo,folderMimeType,service);
 
         for (int i = 0; i < pathsFrom.length; i++)
@@ -436,7 +438,6 @@ public class DriveStorage implements Storage{
 
             if (fileID.equals(""))
             {
-                System.err.println("File " + pathsFrom[i] + " relocation failed.");
                 return false;
             }
 
@@ -458,7 +459,7 @@ public class DriveStorage implements Storage{
                         .setFields("id, parents")
                         .execute();
             } catch (IOException e) {
-                System.err.println("Error encountered in communication with the remote.");
+                e.printStackTrace();
                 return false;
             }
         }
@@ -466,15 +467,26 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean download(String pathFrom, String pathTo) {
+    public boolean download(String pathFrom, String pathTo) throws UnsupportedOperationException{
+        rootCheck();
         try {
-            //TODO skidanje direktorijuma
             String fileID = getFileId(pathFrom,"",service);
 
             if (fileID.equals(""))
             {
-                System.err.println("File download failed.");
                 return false;
+            }
+
+            List<File> files = listAllFiles();
+            for (File file : files)
+            {
+                if (file.getId().equals(fileID))
+                {
+                    if (file.getMimeType().equals(folderMimeType))
+                    {
+                        throw new UnsupportedOperationException();
+                    }
+                }
             }
 
             OutputStream outputStream = new ByteArrayOutputStream();
@@ -487,7 +499,7 @@ public class DriveStorage implements Storage{
 
             FileUtils.copyInputStreamToFile(input, file);
         } catch (IOException e) {
-            System.err.println("Error downloading the file. Either bad path or bad Json respond.");
+            e.printStackTrace();
             return false;
         }
         return true;
@@ -495,12 +507,11 @@ public class DriveStorage implements Storage{
 
     @Override
     public boolean rename(String path, String name) {
-
+        rootCheck();
         String fileID = getFileId(path,"",service);
 
         if (fileID.equals(""))
         {
-            System.err.println("Renaming the file failed.");
             return false;
         }
 
@@ -513,7 +524,7 @@ public class DriveStorage implements Storage{
 
             service.files().update(fileID,file).setFields("name").execute();
         } catch (IOException e) {
-            System.err.println("Something went wrong with renaming the file.");
+            e.printStackTrace();
             return false;
         }
         return true;
@@ -521,11 +532,11 @@ public class DriveStorage implements Storage{
 
     @Override
     public ArrayList<Object> searchAllFilesInDir(String dirPath) {
+        rootCheck();
         String folderID = getFileId(dirPath,folderMimeType,service);
 
         if (folderID.equals(""))
         {
-            System.err.println("File search failed.");
             return new ArrayList<>();
         }
 
@@ -546,11 +557,11 @@ public class DriveStorage implements Storage{
 
     @Override
     public ArrayList<Object> searchAllDirsInDir(String dirPath) {
+        rootCheck();
         String folderID = getFileId(dirPath,folderMimeType,service);
 
         if (folderID.equals(""))
         {
-            System.err.println("File search failed.");
             return new ArrayList<>();
         }
 
@@ -604,13 +615,13 @@ public class DriveStorage implements Storage{
 
     @Override
     public ArrayList<Object> searchAllFilesInDirs(String path) {
+        rootCheck();
         String folderID = getFileId(path,folderMimeType,service);
         List<File> allFiles = listAllFiles();
         List<Object> files = new ArrayList<>();
 
         if (folderID.equals(""))
         {
-            System.err.println("Search failed.");
             return new ArrayList<>();
         }
 
@@ -622,6 +633,7 @@ public class DriveStorage implements Storage{
 
     @Override
     public ArrayList<Object> searchFilesByExt(String path, String ext) {
+        rootCheck();
         ArrayList<Object> res = new ArrayList<>();
 
         List<Object> files = searchAllFilesInDirs(path);
@@ -640,6 +652,7 @@ public class DriveStorage implements Storage{
 
     @Override
     public ArrayList<Object> searchFileBySub(String sub) {
+        rootCheck();
         ArrayList<Object> res = new ArrayList<>();
 
         List<Object> files = searchAllFilesInDirs("");
@@ -658,6 +671,7 @@ public class DriveStorage implements Storage{
 
     @Override
     public boolean dirContainsFiles(String path, String[] names) {
+        rootCheck();
         List<Object> files = searchAllFilesInDirs(path);
         List<String> fileNames = new ArrayList<>();
 
@@ -678,7 +692,8 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public String folderContainingFile(String name) {
+    public String folderContainingFile(String name) throws FileNotFoundException{
+        rootCheck();
         List<File> allFolders = listAllDirs();
         List<File> allFiles = listAllFiles();
 
@@ -695,9 +710,7 @@ public class DriveStorage implements Storage{
 
         if (fileSearchedFor == null)
         {
-            System.out.println("No folder found containing the provided file name.");
-            System.err.println("Folder search failed.");
-            return "";
+            throw new FileNotFoundException();
         }
 
         for (File folder : allFolders)
@@ -708,12 +721,12 @@ public class DriveStorage implements Storage{
             }
         }
 
-        System.out.println("No folder found containing the provided file name.");
-        return "";
+        throw new FileNotFoundException();
     }
 
     @Override
     public void sort(SortParamsEnum sortParamsEnum, boolean ascending) {
+        rootCheck();
         List<Object> files = new ArrayList<>();
 
         for (Object file : lastSearchRes)
@@ -752,7 +765,7 @@ public class DriveStorage implements Storage{
 
     @Override
     public ArrayList<Object> filesCreatedModifiedOnDate(Date date, Date date1) {
-
+        rootCheck();
         List<Object> files = searchAllFilesInDirs("");
         ArrayList<Object> res = new ArrayList<>();
 
@@ -785,6 +798,7 @@ public class DriveStorage implements Storage{
 
     @Override
     public void filterSearchResult(boolean fullPath, boolean showSize, boolean showDateOfCreation, boolean showDateOfModification) {
+        rootCheck();
         ArrayList<String> filesFiltered = new ArrayList<>();
         List<File> allDirs = listAllDirs();
 
