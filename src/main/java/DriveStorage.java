@@ -16,6 +16,7 @@ import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
 import customExceptions.BadPathException;
 import customExceptions.FileCreationException;
+import customExceptions.NoConfigException;
 import customExceptions.NoRootException;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -77,6 +78,8 @@ public class DriveStorage implements Storage{
 
     private List<Object> lastSearchRes = new ArrayList<>();
 
+    private String driveRootName = "Drive root";
+
     /**
      * Creates an authorized Credential object.
      *
@@ -109,7 +112,9 @@ public class DriveStorage implements Storage{
     private List<File> getRootCreationFiles(String name)
     {
         FileList result;
-        String nameProvide = "name='" + name + "'" + " and mimeType='application/vnd.google-apps.folder'";
+        String nameProvide;
+        nameProvide = "name='" + name + "'" + " and mimeType='application/vnd.google-apps.folder'";
+
         try {
             result = service.files().list()
                     .setQ(nameProvide)
@@ -167,6 +172,22 @@ public class DriveStorage implements Storage{
 
             service = new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT)).setApplicationName(APPLICATION_NAME).build();
 
+            List<File> files = getRootCreationFiles(driveRootName);
+
+            if (files.size() > 0)
+            {
+                rootId = files.get(0).getId();
+                /*
+                List<File> config = getRootCreationFiles("configuration.json");
+                if (config.size() == 0)
+                {
+                    throw new NoConfigException("No config in root");
+                }
+                driveConfiguration = configuration.fromJson(conf)
+                 */
+                return true;
+            }
+
             String fileID = "";
 
             if (!path.equals(""))
@@ -174,7 +195,7 @@ public class DriveStorage implements Storage{
 
             //creating a empty folder called Drive root
             File folderMetadata = new File();
-            folderMetadata.setName("Drive root");
+            folderMetadata.setName(driveRootName);
             if (!fileID.equals(""))
             {
                 folderMetadata.setParents(Collections.singletonList(fileID));
@@ -203,7 +224,7 @@ public class DriveStorage implements Storage{
                 ParentsList.add(rootId);
                 fileMetadata.setParents(ParentsList);
                 File file = service.files().create(fileMetadata, configContent).setFields("id, parents").execute();
-                System.out.println("Root File Created with ID: " + folder.getId());
+                //System.out.println("Root File Created with ID: " + folder.getId());
                 return true;
             }
             catch (GoogleJsonResponseException e)
