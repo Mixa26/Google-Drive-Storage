@@ -109,11 +109,14 @@ public class DriveStorage implements Storage{
         return credential;
     }
 
-    private List<File> getRootCreationFiles(String name)
+    private List<File> getRootCreationFiles(String name, boolean folder)
     {
         FileList result;
         String nameProvide;
-        nameProvide = "name='" + name + "'" + " and mimeType='application/vnd.google-apps.folder'";
+        if  (folder)
+            nameProvide = "name='" + name + "'" + " and mimeType='application/vnd.google-apps.folder'";
+        else
+            nameProvide = "name='" + name + "'";
 
         try {
             result = service.files().list()
@@ -137,7 +140,7 @@ public class DriveStorage implements Storage{
 
         for (int i = 0; i < splits.length; i++)
         {
-            List<File> folders = getRootCreationFiles(splits[i]);
+            List<File> folders = getRootCreationFiles(splits[i], true);
             if (folders.isEmpty())
             {
                 throw new BadPathException("Bad path!");
@@ -164,6 +167,24 @@ public class DriveStorage implements Storage{
         return parentID;
     }
 
+    public boolean downloadJson(String fileID, String pathTo) throws UnsupportedOperationException{
+        try {
+            OutputStream outputStream = new ByteArrayOutputStream();
+
+            service.files().get(fileID)
+                    .executeMediaAndDownloadTo(outputStream);
+
+            java.io.File file = new java.io.File(pathTo);
+            InputStream input = new ByteArrayInputStream(((ByteArrayOutputStream)outputStream).toByteArray());
+
+            FileUtils.copyInputStreamToFile(input, file);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+        return true;
+    }
+
     @Override
     public boolean createRoot(String path, Configuration configuration) throws BadPathException{
         try {
@@ -172,19 +193,33 @@ public class DriveStorage implements Storage{
 
             service = new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT)).setApplicationName(APPLICATION_NAME).build();
 
-            List<File> files = getRootCreationFiles(driveRootName);
+            //connecting to existing root
+            List<File> files = getRootCreationFiles(driveRootName,true);
 
+            //reading existing configuration json junk
             if (files.size() > 0)
             {
                 rootId = files.get(0).getId();
-                /*
-                List<File> config = getRootCreationFiles("configuration.json");
+
+                List<File> config = getRootCreationFiles("configuration.json",false);
                 if (config.size() == 0)
                 {
                     throw new NoConfigException("No config in root");
                 }
-                driveConfiguration = configuration.fromJson(conf)
-                 */
+
+                if (!downloadJson(config.get(0).getId(),"files/configuration.json"))
+                    return false;
+
+                java.io.File configFile = new java.io.File("files/configuration.json");
+                Scanner scanner = new Scanner(configFile);
+                StringBuilder json = new StringBuilder();
+                while (scanner.hasNext())
+                {
+                    json.append(scanner.next());
+                }
+
+                fileConfigs = (ArrayList<Configuration>) configuration.fromJson(json.toString());
+
                 return true;
             }
 
