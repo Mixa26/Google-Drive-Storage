@@ -14,16 +14,15 @@ import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
-import customExceptions.BadPathException;
-import customExceptions.FileCreationException;
-import customExceptions.NoConfigException;
-import customExceptions.NoRootException;
+import customExceptions.*;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.checkerframework.checker.units.qual.A;
 
 import java.io.*;
 import java.security.GeneralSecurityException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class DriveStorage implements Storage{
     //configuring DriveStorage to be singleton
@@ -33,7 +32,6 @@ public class DriveStorage implements Storage{
     private String rootId = "";
     //setting the configuration(limitations)
     //so we know the max amount of files,bytes...
-    private Configuration driveConfiguration;
 
     public static DriveStorage getInstance() {
         if (instance == null)
@@ -72,13 +70,15 @@ public class DriveStorage implements Storage{
     private final String folderMimeType = "application/vnd.google-apps.folder";
 
 
-    private ArrayList<Configuration> fileConfigs = new ArrayList<>();
+    private List<Configuration> folderConfigs = new ArrayList<>();
 
     private Drive service;
 
     private List<Object> lastSearchRes = new ArrayList<>();
 
     private String driveRootName = "Drive root";
+
+    private ArrayList<String> allFolderNames = new ArrayList<>();
 
     /**
      * Creates an authorized Credential object.
@@ -188,7 +188,6 @@ public class DriveStorage implements Storage{
     @Override
     public boolean createRoot(String path, Configuration configuration) throws BadPathException{
         try {
-            //TODO proveri da li je root napravljen ukoliko neko hoce 2 roota da napravi
             final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
 
             service = new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT)).setApplicationName(APPLICATION_NAME).build();
@@ -218,7 +217,8 @@ public class DriveStorage implements Storage{
                     json.append(scanner.next());
                 }
 
-                fileConfigs = (ArrayList<Configuration>) configuration.fromJson(json.toString());
+                folderConfigs = configuration.fromJson(json.toString());
+
 
                 return true;
             }
@@ -242,8 +242,8 @@ public class DriveStorage implements Storage{
 
             //writing the contents of configuration into a jason file
             FileWriter writer = new FileWriter("files/configuration.json");
-            fileConfigs.add(configuration);
-            writer.write(configuration.toJson(fileConfigs));
+            folderConfigs.add(configuration);
+            writer.write(configuration.toJson((ArrayList<Configuration>) folderConfigs));
             writer.close();
 
             //creating metadata for configuration for the drive on the cloud
@@ -279,6 +279,12 @@ public class DriveStorage implements Storage{
         if (rootId.equals("")) {
             throw new NoRootException("No root created!");
         }
+    }
+
+    private void folderNameCheck(String name) throws NameExistsException
+    {
+        if (allFolderNames.contains(name))
+            throw new NameExistsException("Name of folder already exists.");
     }
 
     private List<File> getFilesByName(String name, String nameAndMimeiType, Drive service)
@@ -367,8 +373,9 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean createDir(String path, String name) throws NoRootException{
+    public boolean createDir(String path, String name, Configuration configuration) throws NoRootException{
         rootCheck();
+        folderNameCheck(name);
         try {
             String fileId = getFileId(path,folderMimeType,service);
 
@@ -380,6 +387,15 @@ public class DriveStorage implements Storage{
                 File file = service.files().create(fileMetadata)
                         .setFields("id")
                         .execute();
+                allFolderNames.add(name);
+                if (configuration != null)
+                {
+                    configuration.setFolderName(name);
+                    folderConfigs.add(configuration);
+                    FileWriter writer = new FileWriter("files/configuration.json");
+                    writer.write(configuration.toJson((ArrayList<Configuration>) folderConfigs));
+                    writer.close();
+                }
                 return true;
             } catch (GoogleJsonResponseException e) {
                 e.printStackTrace();
@@ -392,38 +408,28 @@ public class DriveStorage implements Storage{
         return false;
     }
 
-    private boolean checkConfiguration(java.io.File file)
+    private boolean checkConfiguration(String[] folderNames, java.io.File file) throws BadExtensionException, NoSpaceException
     {
-        /*
-        boolean valid = true;
-        if (currentDriveState.getBytes() + file.length() > driveConfiguration.getBytes())
-        {
-            System.err.println("Configuration max bytes amount exceeded!");
-            System.err.println("Error uploading the file.");
-            valid = false;
+        for (int i = 0; i < folderConfigs.size(); i++) {
+            Configuration curr = folderConfigs.get(i);
+            //Configuration curr = new Configuration(s);
+            for (int j = 0; j < folderNames.length; j++) {
+                if (folderNames[j].equals(curr.getFolderName())) {
+                    if (curr.getBytes() - file.length() < 0 || curr.getFiles() - 1 < 0 || curr.getForbiddenExtensions().contains(FilenameUtils.getExtension(file.getPath()))) {
+                        if (curr.getForbiddenExtensions().contains(FilenameUtils.getExtension(file.getPath())))
+                            throw new BadExtensionException("Forbidden extension!");
+                        throw new NoSpaceException("Limits exceeded");
+                    }
+                    curr.setBytes(curr.getBytes()-file.length());
+                    curr.setFiles(curr.getFiles()-1);
+                }
+            }
         }
-        if(currentDriveState.getFiles() + 1 > driveConfiguration.getFiles())
-        {
-            System.err.println("Configuration max files amount exceeded!");
-            System.err.println("Error uploading the file.");
-            valid = false;
-        }
-        if(driveConfiguration.getForbiddenExtensions().contains(FilenameUtils.getExtension(file.getPath()))) {
-            System.err.println("Unsupported extension!");
-            System.err.println("Error uploading the file.");
-            valid = false;
-        }
-        if (!valid)return false;
-        //updates the current drive state
-        currentDriveState.setBytes(currentDriveState.getBytes()+file.length());
-        currentDriveState.setFiles(currentDriveState.getFiles()+1);
-
-         */
         return true;
     }
 
     @Override
-    public boolean createFiles(String path, String[] names) throws FileCreationException{
+    public boolean createFiles(String path, String[] names) throws FileCreationException, NoSpaceException, BadExtensionException{
         rootCheck();
         for (int i = 0; i < names.length; i++)
         {
@@ -438,7 +444,12 @@ public class DriveStorage implements Storage{
                     return false;
                 }
             }
-            if (checkConfiguration(localFile))
+            StringBuilder sb = new StringBuilder();
+            sb.append("root/");
+            sb.append(path);
+            String path1 = sb.toString();
+            String[] splits = path1.split("/");
+            if (checkConfiguration(splits,localFile))
             {
                 File fileMetadata = new File();
                 fileMetadata.setName(names[i]);
@@ -453,8 +464,18 @@ public class DriveStorage implements Storage{
                     return false;
                 }
             }
-            else
+            else {
                 return false;
+            }
+        }
+        try {
+            FileWriter writer = new FileWriter("files/configuration.json");
+            writer.write((folderConfigs.get(0)).toJson((ArrayList<Configuration>) folderConfigs));
+            writer.close();
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
         }
         return true;
     }
@@ -503,6 +524,9 @@ public class DriveStorage implements Storage{
 
         List<File> files = new ArrayList<File>();
 
+        long bytes = 0;
+        int filesNum = 0;
+
         files = listAllFiles();
 
         if (files.isEmpty())
@@ -521,12 +545,25 @@ public class DriveStorage implements Storage{
                     if (curr.getParents() == null)continue;
                     if (curr.getParents().contains(deleteFileID) && !curr.getMimeType().equals(folderMimeType))
                     {
-                        //currentDriveState.setBytes(currentDriveState.getBytes()-curr.getSize());
-                        //currentDriveState.setFiles(currentDriveState.getFiles()-1);
+                        bytes += curr.getSize();
+                        filesNum += 1;
                     }
                 }
 
                 service.files().delete(deleteFileID).execute();
+
+                String[] splits = paths[i].split("/");
+                for (int g = 0; g < splits.length; g++)
+                {
+                    for (int j = 0; j < folderConfigs.size(); j++)
+                    {
+                        if (splits[g].equals(folderConfigs.get(j).getFolderName()))
+                        {
+                            folderConfigs.get(j).setBytes(folderConfigs.get(j).getBytes()+bytes);
+                            folderConfigs.get(j).setFiles(folderConfigs.get(j).getFiles()+filesNum);
+                        }
+                    }
+                }
             } catch (IOException e) {
                 e.printStackTrace();
                 valid = false;
@@ -625,6 +662,7 @@ public class DriveStorage implements Storage{
     @Override
     public boolean rename(String path, String name) {
         rootCheck();
+        folderNameCheck(name);
         String fileID = getFileId(path,"",service);
 
         if (fileID.equals(""))

@@ -6,10 +6,10 @@ public class testiranje {
     public static void main(String[] args) {
         ArrayList<String> forb = new ArrayList<>();
         //forb.add("txt");
-        DriveStorage.getInstance().createRoot("", new Configuration("root",100,5,forb));
-        DriveStorage.getInstance().createDir("","folder");
-        DriveStorage.getInstance().createDir("folder","folder1");
-        DriveStorage.getInstance().createDir("folder","folder2");
+        DriveStorage.getInstance().createRoot("", new Configuration("root",100,2,forb));
+        DriveStorage.getInstance().createDir("","folder",null);
+        DriveStorage.getInstance().createDir("folder","folder1",null);
+        DriveStorage.getInstance().createDir("folder","folder2",null);
         String[] names = {"a.txt", "b.txt"};
         String[] names1 = {"c.txt"};
         String[] names2 = {"k.txt"};
