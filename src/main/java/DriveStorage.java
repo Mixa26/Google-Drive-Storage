@@ -30,6 +30,7 @@ public class DriveStorage implements Storage{
     //root id which we use to identify the root folder
     //it is setup in the createRoot
     private String rootId = "";
+    private String jsonID = "";
     //setting the configuration(limitations)
     //so we know the max amount of files,bytes...
 
@@ -167,7 +168,7 @@ public class DriveStorage implements Storage{
         return parentID;
     }
 
-    public boolean downloadJson(String fileID, String pathTo) throws UnsupportedOperationException{
+    private boolean downloadJson(String fileID, String pathTo){
         try {
             OutputStream outputStream = new ByteArrayOutputStream();
 
@@ -185,8 +186,27 @@ public class DriveStorage implements Storage{
         return true;
     }
 
+    private void uploadJson() throws IOException
+    {
+        Configuration configuration = new Configuration();
+        java.io.File config = new java.io.File("files/configuration.json");
+        FileWriter writer = new FileWriter(config);
+        writer.write(configuration.toJson((ArrayList<Configuration>) folderConfigs));
+        writer.close();
+
+        File fileMetadata = new File();
+        fileMetadata.setName("configuration.json");
+        FileContent configContent = new FileContent("media/text",config);
+
+        ArrayList<String> ParentsList = new ArrayList<>();
+        ParentsList.add(rootId);
+        fileMetadata.setParents(ParentsList);
+        File file = service.files().create(fileMetadata, configContent).setFields("id, parents").execute();
+        jsonID = file.getId();
+    }
+
     @Override
-    public boolean createRoot(String path, Configuration configuration) throws BadPathException{
+    public boolean createRoot(String path, Configuration configuration) throws BadPathException, NoConfigException{
         try {
             final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
 
@@ -205,7 +225,7 @@ public class DriveStorage implements Storage{
                 {
                     throw new NoConfigException("No config in root");
                 }
-
+                jsonID = config.get(0).getId();
                 if (!downloadJson(config.get(0).getId(),"files/configuration.json"))
                     return false;
 
@@ -218,7 +238,12 @@ public class DriveStorage implements Storage{
                 }
 
                 folderConfigs = configuration.fromJson(json.toString());
-
+                
+                List<File> folders = listAllDirs();
+                for (File folder : folders)
+                {
+                    allFolderNames.add(folder.getName());
+                }
 
                 return true;
             }
@@ -259,6 +284,7 @@ public class DriveStorage implements Storage{
                 ParentsList.add(rootId);
                 fileMetadata.setParents(ParentsList);
                 File file = service.files().create(fileMetadata, configContent).setFields("id, parents").execute();
+                jsonID = file.getId();
                 //System.out.println("Root File Created with ID: " + folder.getId());
                 return true;
             }
@@ -283,8 +309,9 @@ public class DriveStorage implements Storage{
 
     private void folderNameCheck(String name) throws NameExistsException
     {
-        if (allFolderNames.contains(name))
+        if (allFolderNames.contains(name)) {
             throw new NameExistsException("Name of folder already exists.");
+        }
     }
 
     private List<File> getFilesByName(String name, String nameAndMimeiType, Drive service)
@@ -373,7 +400,7 @@ public class DriveStorage implements Storage{
     }
 
     @Override
-    public boolean createDir(String path, String name, Configuration configuration) throws NoRootException{
+    public boolean createDir(String path, String name, Configuration configuration) throws NoRootException, NameExistsException{
         rootCheck();
         folderNameCheck(name);
         try {
@@ -390,11 +417,10 @@ public class DriveStorage implements Storage{
                 allFolderNames.add(name);
                 if (configuration != null)
                 {
+                    String[] names = {"configuration.json"};
                     configuration.setFolderName(name);
                     folderConfigs.add(configuration);
-                    FileWriter writer = new FileWriter("files/configuration.json");
-                    writer.write(configuration.toJson((ArrayList<Configuration>) folderConfigs));
-                    writer.close();
+                    delete(names);
                 }
                 return true;
             } catch (GoogleJsonResponseException e) {
@@ -472,6 +498,8 @@ public class DriveStorage implements Storage{
             FileWriter writer = new FileWriter("files/configuration.json");
             writer.write((folderConfigs.get(0)).toJson((ArrayList<Configuration>) folderConfigs));
             writer.close();
+            String[] names1 = {"configuration.json"};
+            delete(names1);
         }
         catch (IOException e)
         {
@@ -550,9 +578,17 @@ public class DriveStorage implements Storage{
                     }
                 }
 
-                service.files().delete(deleteFileID).execute();
+                if (deleteFileID.equals(jsonID))
+                    service.files().delete(deleteFileID).execute();
+                else
+                {
+                    service.files().delete(deleteFileID).execute();
+                    service.files().delete(jsonID).execute();
+                }
 
                 String[] splits = paths[i].split("/");
+
+                allFolderNames.remove(splits[splits.length-1]);
                 for (int g = 0; g < splits.length; g++)
                 {
                     for (int j = 0; j < folderConfigs.size(); j++)
@@ -564,6 +600,7 @@ public class DriveStorage implements Storage{
                         }
                     }
                 }
+                uploadJson();
             } catch (IOException e) {
                 e.printStackTrace();
                 valid = false;
