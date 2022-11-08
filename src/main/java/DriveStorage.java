@@ -23,9 +23,9 @@ import java.security.GeneralSecurityException;
 import java.util.*;
 
 public class DriveStorage extends Storage{
-    /*static{
-        StorageManager.registerStorage(new DriveStorage());
-    }*/
+    static{
+        StorageManager.registerStorage(DriveStorage.getInstance());
+    }
 
     //configuring DriveStorage to be singleton
     private static DriveStorage instance;
@@ -46,6 +46,7 @@ public class DriveStorage extends Storage{
 
     private DriveStorage()
     {
+        super();
     }
 
     //Person credential authorization
@@ -168,10 +169,10 @@ public class DriveStorage extends Storage{
 
                 folderConfigs = configuration.fromJson(json.toString());
 
-                List<File> folders = listAllDirs();
-                for (File folder : folders)
+                List<Object> folders = searchAllFilesInDirs("");
+                for (Object folder : folders)
                 {
-                    allFolderNames.add(folder.getName());
+                    allFolderNames.add(((File)folder).getName());
                 }
 
                 return true;
@@ -194,14 +195,20 @@ public class DriveStorage extends Storage{
                 config.createNewFile();
             }
 
-            if (configuration == null)
-                configuration = new Configuration();
-
+            if (configuration != null) {
+                configuration.setFolderName(driveRootName);
+                FileWriter writer = new FileWriter("files/configuration.json");
+                folderConfigs.add(configuration);
+                writer.write(configuration.toJson((ArrayList<Configuration>) folderConfigs));
+                writer.close();
+            }
+            else{
+                FileWriter writer = new FileWriter("files/configuration.json");
+                writer.write("[{}]");
+                writer.close();
+            }
             //writing the contents of configuration into a jason file
-            FileWriter writer = new FileWriter("files/configuration.json");
-            folderConfigs.add(configuration);
-            writer.write(configuration.toJson((ArrayList<Configuration>) folderConfigs));
-            writer.close();
+
 
             //creating metadata for configuration for the drive on the cloud
             File fileMetadata = new File();
@@ -296,7 +303,7 @@ public class DriveStorage extends Storage{
         {
             String name = "name='" + folder[i] + "'";
             ArrayList<File> files;
-            if (mimeiType != "") {
+            if (!mimeiType.equals("")) {
                 String nameAndMimeiType = name + " and mimeType='" + mimeiType + "'";
                 files = (ArrayList<File>) getFilesByName("", nameAndMimeiType, service);
             }
@@ -332,7 +339,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public boolean createDir(String path, String name, Configuration configuration) throws NoRootException, NameExistsException{
+    public boolean createDir(String path, String name, Configuration configuration) throws NoRootException, NameExistsException, BadPathException{
         rootCheck();
         folderNameCheck(name);
         try {
@@ -387,7 +394,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public boolean createFiles(String path, String[] names) throws FileCreationException, NoSpaceException, BadExtensionException{
+    public boolean createFiles(String path, String[] names) throws FileCreationException, NoSpaceException, BadExtensionException, BadPathException, NoRootException{
         rootCheck();
         for (int i = 0; i < names.length; i++)
         {
@@ -427,8 +434,9 @@ public class DriveStorage extends Storage{
             }
         }
         try {
+            Configuration configuration = new Configuration();
             FileWriter writer = new FileWriter("files/configuration.json");
-            writer.write((folderConfigs.get(0)).toJson((ArrayList<Configuration>) folderConfigs));
+            writer.write(configuration.toJson((ArrayList<Configuration>) folderConfigs));
             writer.close();
             String[] names1 = {"configuration.json"};
             delete(names1);
@@ -478,7 +486,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public boolean delete(String[] paths) {
+    public boolean delete(String[] paths) throws BadPathException, NoRootException{
         rootCheck();
         boolean valid = true;
 
@@ -496,19 +504,12 @@ public class DriveStorage extends Storage{
 
         for (int i = 0; i < paths.length; i++)
         {
+
             String deleteFileID = getFileId(paths[i],"",service);
 
             try {
-                for(int j = 0; j < files.size(); j++)
-                {
-                    File curr = files.get(j);
-                    if (curr.getParents() == null)continue;
-                    if (curr.getParents().contains(deleteFileID) && !curr.getMimeType().equals(folderMimeType))
-                    {
-                        bytes += curr.getSize();
-                        filesNum += 1;
-                    }
-                }
+                bytes += service.files().get(deleteFileID).setFields("size").execute().getSize();
+                filesNum += 1;
 
                 if (deleteFileID.equals(jsonID))
                     service.files().delete(deleteFileID).execute();
@@ -542,11 +543,29 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public boolean relocateFiles(String[] pathsFrom, String pathTo)
+    public boolean relocateFiles(String[] pathsFrom, String pathTo) throws BadPathException, NoRootException
     {
         rootCheck();
         String pathToID = getFileId(pathTo,folderMimeType,service);
 
+        for (int i = 0; i < pathsFrom.length; i++)
+        {
+            String[] splits = pathsFrom[i].split("/");
+            String[] name = {splits[splits.length-1]};
+            StringBuilder sb = new StringBuilder();
+            sb.append("files/");
+            sb.append(name[0]);
+            if (!download(pathsFrom[i],sb.toString()))return false;
+        }
+        if (!delete(pathsFrom))return false;
+        for (int i = 0; i < pathsFrom.length; i++)
+        {
+            String[] splits = pathsFrom[i].split("/");
+            String[] name = {splits[splits.length-1]};
+            if (!createFiles(pathTo, name))return false;
+        }
+
+        /*
         for (int i = 0; i < pathsFrom.length; i++)
         {
             String[] folderCuts = pathsFrom[i].split("/");
@@ -585,12 +604,12 @@ public class DriveStorage extends Storage{
                 e.printStackTrace();
                 return false;
             }
-        }
+        }*/
         return true;
     }
 
     @Override
-    public boolean download(String pathFrom, String pathTo) throws UnsupportedOperationException{
+    public boolean download(String pathFrom, String pathTo) throws UnsupportedOperationException, BadPathException, NoRootException{
         rootCheck();
         try {
             String fileID = getFileId(pathFrom,"",service);
@@ -618,9 +637,16 @@ public class DriveStorage extends Storage{
                     .executeMediaAndDownloadTo(outputStream);
 
             java.io.File file = new java.io.File(pathTo);
+            if (!file.exists())
+            {
+                file.getParentFile().mkdirs();
+                file.createNewFile();
+            }
             InputStream input = new ByteArrayInputStream(((ByteArrayOutputStream)outputStream).toByteArray());
 
             FileUtils.copyInputStreamToFile(input, file);
+            input.close();
+            outputStream.close();
         } catch (IOException e) {
             e.printStackTrace();
             return false;
@@ -629,7 +655,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public boolean rename(String path, String name) {
+    public boolean rename(String path, String name) throws BadPathException, NoRootException, NameExistsException{
         rootCheck();
         folderNameCheck(name);
         String fileID = getFileId(path,"",service);
@@ -655,7 +681,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public ArrayList<Object> searchAllFilesInDir(String dirPath) {
+    public ArrayList<Object> searchAllFilesInDir(String dirPath) throws NoRootException, BadPathException{
         rootCheck();
         String folderID = getFileId(dirPath,folderMimeType,service);
 
@@ -680,7 +706,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public ArrayList<Object> searchAllDirsInDir(String dirPath) {
+    public ArrayList<Object> searchAllDirsInDir(String dirPath) throws NoRootException, BadPathException{
         rootCheck();
         String folderID = getFileId(dirPath,folderMimeType,service);
 
@@ -738,7 +764,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public ArrayList<Object> searchAllFilesInDirs(String path) {
+    public ArrayList<Object> searchAllFilesInDirs(String path) throws NoRootException, BadPathException{
         rootCheck();
         String folderID = getFileId(path,folderMimeType,service);
         List<File> allFiles = listAllFiles();
@@ -756,7 +782,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public ArrayList<Object> searchFilesByExt(String path, String ext) {
+    public ArrayList<Object> searchFilesByExt(String path, String ext) throws NoRootException, BadPathException{
         rootCheck();
         ArrayList<Object> res = new ArrayList<>();
 
@@ -775,7 +801,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public ArrayList<Object> searchFileBySub(String sub) {
+    public ArrayList<Object> searchFileBySub(String sub) throws NoRootException{
         rootCheck();
         ArrayList<Object> res = new ArrayList<>();
 
@@ -794,7 +820,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public boolean dirContainsFiles(String path, String[] names) {
+    public boolean dirContainsFiles(String path, String[] names) throws NoRootException, BadPathException{
         rootCheck();
         List<Object> files = searchAllFilesInDirs(path);
         List<String> fileNames = new ArrayList<>();
@@ -816,7 +842,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public String folderContainingFile(String name) throws FileNotFoundException{
+    public String folderContainingFile(String name) throws FileNotFoundException, NoRootException{
         rootCheck();
         List<File> allFolders = listAllDirs();
         List<File> allFiles = listAllFiles();
@@ -849,7 +875,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public void sort(SortParamsEnum sortParamsEnum, boolean ascending) {
+    public void sort(SortParamsEnum sortParamsEnum, boolean ascending) throws NoRootException{
         rootCheck();
         List<Object> files = new ArrayList<>();
 
@@ -888,7 +914,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public ArrayList<Object> filesCreatedModifiedOnDate(Date date, Date date1) {
+    public ArrayList<Object> filesCreatedModifiedOnDate(Date date, Date date1) throws NoRootException{
         rootCheck();
         List<Object> files = searchAllFilesInDirs("");
         ArrayList<Object> res = new ArrayList<>();
@@ -921,7 +947,7 @@ public class DriveStorage extends Storage{
     }
 
     @Override
-    public void filterSearchResult(boolean fullPath, boolean showSize, boolean showDateOfCreation, boolean showDateOfModification) {
+    public void filterSearchResult(boolean fullPath, boolean showSize, boolean showDateOfCreation, boolean showDateOfModification) throws NoRootException{
         rootCheck();
         ArrayList<String> filesFiltered = new ArrayList<>();
         List<File> allDirs = listAllDirs();
