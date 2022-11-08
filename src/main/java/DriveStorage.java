@@ -17,14 +17,16 @@ import com.google.api.services.drive.model.FileList;
 import customExceptions.*;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
-import org.checkerframework.checker.units.qual.A;
 
 import java.io.*;
 import java.security.GeneralSecurityException;
 import java.util.*;
-import java.util.stream.Collectors;
 
-public class DriveStorage implements Storage{
+public class DriveStorage extends Storage{
+    /*static{
+        StorageManager.registerStorage(new DriveStorage());
+    }*/
+
     //configuring DriveStorage to be singleton
     private static DriveStorage instance;
     //root id which we use to identify the root folder
@@ -77,7 +79,7 @@ public class DriveStorage implements Storage{
 
     private List<Object> lastSearchRes = new ArrayList<>();
 
-    private String driveRootName = "Drive root";
+    private String driveRootName = "DriveRoot";
 
     private ArrayList<String> allFolderNames = new ArrayList<>();
 
@@ -110,82 +112,6 @@ public class DriveStorage implements Storage{
         return credential;
     }
 
-    private List<File> getRootCreationFiles(String name, boolean folder)
-    {
-        FileList result;
-        String nameProvide;
-        if  (folder)
-            nameProvide = "name='" + name + "'" + " and mimeType='application/vnd.google-apps.folder'";
-        else
-            nameProvide = "name='" + name + "'";
-
-        try {
-            result = service.files().list()
-                    .setQ(nameProvide)
-                    .setSpaces("drive")
-                    .setFields("files(id, name, parents, mimeType, size)")
-                    .execute();
-        }
-        catch (IOException e)
-        {
-            e.printStackTrace();
-            return new ArrayList<>();
-        }
-        return result.getFiles();
-    }
-
-    private String getRootCreationFolderID(String path)
-    {
-        String[] splits = path.split("/");
-        String parentID = "";
-
-        for (int i = 0; i < splits.length; i++)
-        {
-            List<File> folders = getRootCreationFiles(splits[i], true);
-            if (folders.isEmpty())
-            {
-                throw new BadPathException("Bad path!");
-            }
-            else
-            {
-                if (i != 0)
-                {
-                    for (int j = 0; j < folders.size(); j++)
-                    {
-                        if (folders.get(j).getParents().contains(parentID))
-                        {
-                            parentID = folders.get(j).getId();
-                            break;
-                        }
-                    }
-                }
-                else
-                {
-                    parentID = folders.get(0).getId();
-                }
-            }
-        }
-        return parentID;
-    }
-
-    private boolean downloadJson(String fileID, String pathTo){
-        try {
-            OutputStream outputStream = new ByteArrayOutputStream();
-
-            service.files().get(fileID)
-                    .executeMediaAndDownloadTo(outputStream);
-
-            java.io.File file = new java.io.File(pathTo);
-            InputStream input = new ByteArrayInputStream(((ByteArrayOutputStream)outputStream).toByteArray());
-
-            FileUtils.copyInputStreamToFile(input, file);
-        } catch (IOException e) {
-            e.printStackTrace();
-            return false;
-        }
-        return true;
-    }
-
     private void uploadJson() throws IOException
     {
         Configuration configuration = new Configuration();
@@ -212,24 +138,24 @@ public class DriveStorage implements Storage{
 
             service = new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT)).setApplicationName(APPLICATION_NAME).build();
 
-            //connecting to existing root
-            List<File> files = getRootCreationFiles(driveRootName,true);
+            String fileID = "";
 
-            //reading existing configuration json junk
-            if (files.size() > 0)
+            if (!path.equals(""))
+                fileID = getFileId(path,folderMimeType,service);
+
+            if (!fileID.equals("") && path.endsWith(driveRootName))
             {
-                rootId = files.get(0).getId();
-
-                List<File> config = getRootCreationFiles("configuration.json",false);
-                if (config.size() == 0)
+                rootId = fileID;
+                jsonID = getFileId("configuration.json","",service);
+                java.io.File configFile = new java.io.File("files/configuration.json");
+                if (!configFile.exists())
                 {
-                    throw new NoConfigException("No config in root");
+                    configFile.getParentFile().mkdirs();
+                    configFile.createNewFile();
                 }
-                jsonID = config.get(0).getId();
-                if (!downloadJson(config.get(0).getId(),"files/configuration.json"))
+                if (!download("configuration.json", "files/configuration.json"))
                     return false;
 
-                java.io.File configFile = new java.io.File("files/configuration.json");
                 Scanner scanner = new Scanner(configFile);
                 StringBuilder json = new StringBuilder();
                 while (scanner.hasNext())
@@ -237,8 +163,11 @@ public class DriveStorage implements Storage{
                     json.append(scanner.next());
                 }
 
+                if (configuration == null)
+                    configuration = new Configuration();
+
                 folderConfigs = configuration.fromJson(json.toString());
-                
+
                 List<File> folders = listAllDirs();
                 for (File folder : folders)
                 {
@@ -247,11 +176,6 @@ public class DriveStorage implements Storage{
 
                 return true;
             }
-
-            String fileID = "";
-
-            if (!path.equals(""))
-                fileID = getRootCreationFolderID(path);
 
             //creating a empty folder called Drive root
             File folderMetadata = new File();
@@ -264,6 +188,14 @@ public class DriveStorage implements Storage{
             //setting this to be the root folder of the storage
 
             java.io.File config = new java.io.File("files/configuration.json");
+            if (!config.exists())
+            {
+                config.getParentFile().mkdirs();
+                config.createNewFile();
+            }
+
+            if (configuration == null)
+                configuration = new Configuration();
 
             //writing the contents of configuration into a jason file
             FileWriter writer = new FileWriter("files/configuration.json");
@@ -378,7 +310,7 @@ public class DriveStorage implements Storage{
             }
             for (int j = 0; j < files.size(); j++)
             {
-                if (files.get(j).getParents().contains(parentID))
+                if (files.get(j).getParents().contains(parentID) || rootId.equals(""))
                 {
                     parentID = files.get(j).getId();
                     badBath = false;
@@ -471,7 +403,7 @@ public class DriveStorage implements Storage{
                 }
             }
             StringBuilder sb = new StringBuilder();
-            sb.append("root/");
+            sb.append(driveRootName + "/");
             sb.append(path);
             String path1 = sb.toString();
             String[] splits = path1.split("/");
