@@ -509,6 +509,11 @@ public class DriveStorage extends Storage{
 
             try {
                 bytes += service.files().get(deleteFileID).setFields("size").execute().getSize();
+                File file =  service.files().get(deleteFileID).setFields("name, mimeType").execute();
+                String name = "";
+                if (file.getMimeType().equals(folderMimeType))
+                    name = file.getName();
+
                 filesNum += 1;
 
                 if (deleteFileID.equals(jsonID))
@@ -517,6 +522,18 @@ public class DriveStorage extends Storage{
                 {
                     service.files().delete(deleteFileID).execute();
                     service.files().delete(jsonID).execute();
+                }
+
+                if (!name.equals(""))
+                {
+                    for (int g = 0; g < folderConfigs.size(); g++)
+                    {
+                        if (folderConfigs.get(g).getFolderName().equals(name))
+                        {
+                            folderConfigs.remove(g);
+                            break;
+                        }
+                    }
                 }
 
                 String[] splits = paths[i].split("/");
@@ -557,13 +574,13 @@ public class DriveStorage extends Storage{
             sb.append(name[0]);
             if (!download(pathsFrom[i],sb.toString()))return false;
         }
-        if (!delete(pathsFrom))return false;
         for (int i = 0; i < pathsFrom.length; i++)
         {
             String[] splits = pathsFrom[i].split("/");
             String[] name = {splits[splits.length-1]};
             if (!createFiles(pathTo, name))return false;
         }
+        if (!delete(pathsFrom))return false;
 
         /*
         for (int i = 0; i < pathsFrom.length; i++)
@@ -657,6 +674,8 @@ public class DriveStorage extends Storage{
     @Override
     public boolean rename(String path, String name) throws BadPathException, NoRootException, NameExistsException{
         rootCheck();
+        String[] splits = path.split("/");
+        String oldName = splits[splits.length-1];
         folderNameCheck(name);
         String fileID = getFileId(path,"",service);
 
@@ -666,6 +685,7 @@ public class DriveStorage extends Storage{
         }
 
         try {
+
             File file = service.files().get(fileID)
                     .setFields("name")
                     .execute();
@@ -673,6 +693,16 @@ public class DriveStorage extends Storage{
             file.setName(name);
 
             service.files().update(fileID,file).setFields("name").execute();
+
+            for (int i = 0; i < folderConfigs.size(); i++)
+            {
+                if (folderConfigs.get(i).getFolderName().equals(oldName))
+                    folderConfigs.get(i).setFolderName(name);
+            }
+
+            allFolderNames.remove(oldName);
+            allFolderNames.add(name);
+
         } catch (IOException e) {
             e.printStackTrace();
             return false;
@@ -696,7 +726,7 @@ public class DriveStorage extends Storage{
 
         for (File file : files)
         {
-            if (file.getParents() != null && file.getParents().contains(folderID))
+            if (file.getParents() != null && file.getParents().contains(folderID) && !file.getMimeType().equals(folderMimeType))
             {
                 res.add(file);
             }
