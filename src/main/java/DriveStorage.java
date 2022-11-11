@@ -508,11 +508,12 @@ public class DriveStorage extends Storage{
             String deleteFileID = getFileId(paths[i],"",service);
 
             try {
-                bytes += service.files().get(deleteFileID).setFields("size").execute().getSize();
                 File file =  service.files().get(deleteFileID).setFields("name, mimeType").execute();
                 String name = "";
                 if (file.getMimeType().equals(folderMimeType))
                     name = file.getName();
+                else
+                    bytes += service.files().get(deleteFileID).setFields("size").execute().getSize();
 
                 filesNum += 1;
 
